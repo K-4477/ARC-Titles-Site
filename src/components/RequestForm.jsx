@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { metaFor, sortTitles, isPermanent, MAX_HOURS } from '../lib/titles.js';
+import { metaFor, sortTitles, isPermanent, MAX_HOURS, MAX_DAYS_AHEAD } from '../lib/titles.js';
 import { zonedToDate, hm, shortDate, dayKey, nextHour, tzName, TIME_SLOTS } from '../lib/time.js';
 import { storage } from '../lib/storage.js';
 
@@ -33,10 +33,13 @@ export default function RequestForm({ titles, upcoming, tz, titleId, onTitleChan
     ? upcoming.find((r) => r.title_name === title.name && r.start < slot.end && r.end > slot.start)
     : null;
   const inPast = slot && slot.start < new Date();
+  const tooFar = slot && slot.start.getTime() > Date.now() + MAX_DAYS_AHEAD * 86400000;
+  const maxDate = dayKey(new Date(Date.now() + MAX_DAYS_AHEAD * 86400000), tz);
 
   let convert;
   if (!slot) convert = <>Pick a date and time to see it converted to server time (UTC).</>;
   else if (inPast) convert = <>That time has already passed. Pick a later slot.</>;
+  else if (tooFar) convert = <>You can book up to {MAX_DAYS_AHEAD} days ahead. Pick an earlier date.</>;
   else if (clash) convert = <>That overlaps {clash.username}'s request ({hm(clash.start, tz)} – {hm(clash.end, tz)}). Pick another time.</>;
   else convert = (
     <>
@@ -57,6 +60,7 @@ export default function RequestForm({ titles, upcoming, tz, titleId, onTitleChan
     if (!title) return fail('Choose a title.');
     if (!slot) return fail('Choose a date and start time.');
     if (inPast) return fail('That time has already passed.');
+    if (tooFar) return fail(`You can book up to ${MAX_DAYS_AHEAD} days ahead.`);
     if (clash) return fail('That slot overlaps another request for this title.');
     if ((x || y) && !(/^\d{1,4}$/.test(x) && /^\d{1,4}$/.test(y))) {
       return fail('Coordinates should be two numbers, or leave both blank.');
@@ -99,7 +103,7 @@ export default function RequestForm({ titles, upcoming, tz, titleId, onTitleChan
           </div>
           <div>
             <label htmlFor="date">Date</label>
-            <input type="date" id="date" value={date} min={dayKey(new Date(), tz)}
+            <input type="date" id="date" value={date} min={dayKey(new Date(), tz)} max={maxDate}
               onChange={(e) => setWhen({ date: e.target.value, time })} />
           </div>
           <div>
@@ -109,7 +113,7 @@ export default function RequestForm({ titles, upcoming, tz, titleId, onTitleChan
               {TIME_SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div className={`full convert${slot && (inPast || clash) ? ' warn' : ''}`}>{convert}</div>
+          <div className={`full convert${slot && (inPast || tooFar || clash) ? ' warn' : ''}`}>{convert}</div>
           <div>
             <span className="lbl">Duration</span>
             <div className="seg">

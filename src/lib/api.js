@@ -1,12 +1,14 @@
 import { toApi } from './time.js';
 
-const API = 'api.php';
+// The backend is the Vercel Function in api/index.js.
+const API = '/api';
 
-// `npm run dev` shows sample data unless VITE_LIVE=1 (see vite.config.js). A production build always uses the real API.
+// `npm run dev` shows sample data. `vercel dev` with VITE_LIVE=1 uses the real API; a production build always does.
 export const USE_SAMPLE = import.meta.env.DEV && import.meta.env.VITE_LIVE !== '1';
 
 async function getJson(url, opts) {
-  const res = await fetch(url, opts);
+  let res;
+  try { res = await fetch(url, opts); } catch { throw new Error("Couldn't reach the server. Check your connection."); }
   const text = await res.text();
   let data;
   try { data = JSON.parse(text); } catch { throw new Error('The server sent an unexpected reply.'); }
@@ -40,19 +42,8 @@ export async function fetchAll() {
 }
 
 /* ---- admin ----
- * Contract the PHP side needs to implement. Every admin_* action must check a server-side
- * session (set by admin_login) and answer {success:false,error} without one.
- *   GET  api.php?action=admin_session                      -> {success:true} when logged in
- *   POST action=admin_login,  password                     -> {success}; starts the session
- *   POST action=admin_logout                               -> {success}
- *   POST action=admin_assign, title_id, holder, duration   -> hours from now (may be fractional); server computes expiry
- *   POST action=admin_release, title_id                    -> clears holder, expiry and permanent flag
- *   POST action=admin_set_permanent, title_id, is_permanent (0|1)
- *   GET  api.php?action=admin_get_reservations             -> {success, reservations:[{id,title_id,title_name,username,start_time,end_time,coordinates,notes}]}
- *                                                            ALL reservations including past ones, each with a unique id
- *   POST action=admin_update_reservation, id, title_id, start_time (UTC, YYYY-MM-DDTHH:MM:00), duration (hours)
- *   POST action=admin_cancel_reservation, id               -> deletes (or marks cancelled) the reservation
- * get_titles is reused to list titles.
+ * Implemented in api/index.js. Admin actions need the session cookie set by admin_login;
+ * the cookie is HttpOnly, so this code never sees it, the browser just sends it.
  */
 const SAMPLE_ADMIN_PASSWORD = 'admin';
 let nextSampleResId = 1;
@@ -64,10 +55,12 @@ const sampleTitle = (id) => {
   return t;
 };
 
-async function adminPost(fields) {
-  const fd = new FormData();
-  Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
-  return getJson(API, { method: 'POST', body: fd });
+function post(fields) {
+  return getJson(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields)
+  });
 }
 
 export async function fetchTitles() {
@@ -86,12 +79,12 @@ export async function adminLogin(password) {
     sampleAdmin = true;
     return;
   }
-  await adminPost({ action: 'admin_login', password });
+  await post({ action: 'admin_login', password });
 }
 
 export async function adminLogout() {
   if (USE_SAMPLE) { sampleAdmin = false; return; }
-  await adminPost({ action: 'admin_logout' });
+  await post({ action: 'admin_logout' });
 }
 
 export async function adminAssign({ titleId, holder, hours }) {
@@ -103,7 +96,7 @@ export async function adminAssign({ titleId, holder, hours }) {
     t.is_permanent = '0';
     return;
   }
-  await adminPost({ action: 'admin_assign', title_id: titleId, holder, duration: hours });
+  await post({ action: 'admin_assign', title_id: titleId, holder, duration: hours });
 }
 
 export async function adminRelease(titleId) {
@@ -112,7 +105,7 @@ export async function adminRelease(titleId) {
     t.holder = null; t.expires = null; t.held_since = null; t.is_permanent = '0';
     return;
   }
-  await adminPost({ action: 'admin_release', title_id: titleId });
+  await post({ action: 'admin_release', title_id: titleId });
 }
 
 export async function adminSetPermanent(titleId, permanent) {
@@ -123,7 +116,7 @@ export async function adminSetPermanent(titleId, permanent) {
     if (permanent) t.expires = null;
     return;
   }
-  await adminPost({ action: 'admin_set_permanent', title_id: titleId, is_permanent: permanent ? 1 : 0 });
+  await post({ action: 'admin_set_permanent', title_id: titleId, is_permanent: permanent ? 1 : 0 });
 }
 
 export async function fetchAdminReservations() {
@@ -147,7 +140,7 @@ export async function adminUpdateReservation({ id, titleId, titleName, start, ho
     r.end_time = apiTime(new Date(start.getTime() + hours * 3600000));
     return;
   }
-  await adminPost({ action: 'admin_update_reservation', id, title_id: titleId, start_time: toApi(start), duration: hours });
+  await post({ action: 'admin_update_reservation', id, title_id: titleId, start_time: toApi(start), duration: hours });
 }
 
 export async function adminCancelReservation(id) {
@@ -155,7 +148,7 @@ export async function adminCancelReservation(id) {
     sample.reservations.splice(sample.reservations.indexOf(sampleReservation(id)), 1);
     return;
   }
-  await adminPost({ action: 'admin_cancel_reservation', id });
+  await post({ action: 'admin_cancel_reservation', id });
 }
 
 /** req: { username, titleId, titleName, start: Date, end: Date, hours, coordinates, notes } */
@@ -169,13 +162,13 @@ export async function submitRequest(req) {
     });
     return;
   }
-  const fd = new FormData();
-  fd.append('action', 'submit_request');
-  fd.append('username', req.username);
-  fd.append('title_id', req.titleId);
-  fd.append('start_time', toApi(req.start));
-  fd.append('duration', req.hours);
-  fd.append('coordinates', req.coordinates);
-  fd.append('notes', req.notes);
-  await getJson(API, { method: 'POST', body: fd });
+  await post({
+    action: 'submit_request',
+    username: req.username,
+    title_id: req.titleId,
+    start_time: toApi(req.start),
+    duration: req.hours,
+    coordinates: req.coordinates,
+    notes: req.notes
+  });
 }

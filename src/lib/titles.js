@@ -12,7 +12,9 @@ export const TITLE_META = {
 };
 
 export const TITLE_ORDER = Object.keys(TITLE_META);
+// Shared with the server (api/index.js), which enforces both.
 export const MAX_HOURS = 2;
+export const MAX_DAYS_AHEAD = 30;
 
 export const metaFor = (name) => TITLE_META[name] || { color: 'gold', icon: 'harmony', buff: '' };
 

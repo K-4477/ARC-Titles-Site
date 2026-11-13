@@ -37,7 +37,7 @@ function EditForm({ res, titles, reservations, tz, onSave, onClose }) {
 
   async function save(e) {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || clash) return;
     setBusy(true);
     const ok = await onSave({ id: res.id, titleId: title.id, titleName: title.name, start, hours: h },
       `${res.username}'s request updated.`);
@@ -70,11 +70,11 @@ function EditForm({ res, titles, reservations, tz, onSave, onClose }) {
       </div>
       <div className={`full convert${clash ? ' warn' : ''}`}>
         {!valid && 'Fill in every field.'}
-        {valid && clash && <>Overlaps {clash.username}'s request ({hm(clash.start, tz)} – {hm(clash.end, tz)}). Admins can still save it.</>}
+        {valid && clash && <>Overlaps {clash.username}'s request ({hm(clash.start, tz)} – {hm(clash.end, tz)}). Pick another time or title.</>}
         {valid && !clash && <>New slot: <b>{shortDate(start, tz)}, {hm(start, tz)} – {hm(end, tz)}</b> your time = <b>{hm(start, 'UTC')} – {hm(end, 'UTC')} UTC</b></>}
       </div>
       <div className="full edit-actions">
-        <button className="btn primary" type="submit" disabled={!valid || busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+        <button className="btn primary" type="submit" disabled={!valid || !!clash || busy}>{busy ? 'Saving…' : 'Save changes'}</button>
         <button className="btn" type="button" onClick={onClose} disabled={busy}>Discard</button>
       </div>
     </form>
