@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api.php", "destination": "http://arc50.duckdns.org/api.php" }
+  ]
+}
