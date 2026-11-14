@@ -6,6 +6,7 @@
 import { db, overLimit, recordHit } from '../server/db.js';
 import { checkPassword, clearedCookie, isAdmin, sessionCookie } from '../server/auth.js';
 import { UserError, bad } from '../server/errors.js';
+import { announceNew, cancelBooking, dbError, syncCancelled, syncEdited, updateBooking } from '../server/bookings.js';
 import { MAX_DAYS_AHEAD, MAX_HOURS } from '../src/lib/titles.js';
 
 const RETENTION_DAYS = 90;        // finished requests older than this are deleted
@@ -51,13 +52,6 @@ function hoursBetween(value, min, max) {
   const n = Number(value);
   if (!(Number.isFinite(n) && n >= min && n <= max)) bad(`Duration must be between ${min} and ${max} hours.`);
   return n;
-}
-
-// Turns database rule violations into messages people can act on.
-function dbError(e) {
-  if (e?.code === '23P01') bad('That slot overlaps another request for this title. Pick another time.');
-  if (e?.code === '23503') bad('That title does not exist.');
-  throw e;
 }
 
 function requireAdmin(request) {
@@ -133,7 +127,7 @@ async function submit_request(body, request) {
   const notes = text(body.notes, 500, 'Notes');
 
   const sql = db();
-  const [title] = await sql`SELECT id, holder, is_permanent FROM titles WHERE id = ${titleId}`;
+  const [title] = await sql`SELECT id, name, holder, is_permanent FROM titles WHERE id = ${titleId}`;
   if (!title) bad('That title does not exist.');
   if (title.is_permanent && title.holder) bad('That title is held permanently and cannot be requested.');
 
@@ -142,16 +136,20 @@ async function submit_request(body, request) {
   }
 
   const end = new Date(start.getTime() + hours * 3_600_000);
+  let row;
   try {
-    await sql`
+    [row] = await sql`
       INSERT INTO reservations (title_id, username, start_time, end_time, coordinates, notes)
-      VALUES (${titleId}, ${username}, ${start.toISOString()}, ${end.toISOString()}, ${coordinates}, ${notes})`;
+      VALUES (${titleId}, ${username}, ${start.toISOString()}, ${end.toISOString()}, ${coordinates}, ${notes})
+      RETURNING *`;
   } catch (e) {
     dbError(e);
   }
 
   // Housekeeping instead of a cron job: keeps storage flat. Failure here shouldn't fail the request.
+  // The Discord post and reminder never throw either.
   await Promise.allSettled([
+    announceNew({ ...row, title_name: title.name }),
     sql`DELETE FROM reservations WHERE end_time < now() - make_interval(days => ${RETENTION_DAYS})`,
     sql`DELETE FROM rate_limits WHERE at < now() - interval '1 day'`
   ]);
@@ -238,23 +236,13 @@ async function admin_update_reservation(body) {
   const titleId = intId(body.title_id, 'title');
   const start = utcTime(body.start_time);
   const end = new Date(start.getTime() + hoursBetween(body.duration, 0.25, 48) * 3_600_000);
-  let rows = [];
-  try {
-    rows = await db()`
-      UPDATE reservations
-      SET title_id = ${titleId}, start_time = ${start.toISOString()}, end_time = ${end.toISOString()}
-      WHERE id = ${id} RETURNING id`;
-  } catch (e) {
-    dbError(e);
-  }
-  if (!rows.length) bad('That request no longer exists.');
+  await syncEdited(await updateBooking(id, titleId, start, end), 'an admin (website)');
   return {};
 }
 
 async function admin_cancel_reservation(body) {
   const id = intId(body.id, 'request');
-  const rows = await db()`DELETE FROM reservations WHERE id = ${id} RETURNING id`;
-  if (!rows.length) bad('That request no longer exists.');
+  await syncCancelled(await cancelBooking(id), 'An admin (website)');
   return {};
 }
 

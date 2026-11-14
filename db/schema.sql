@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS reservations (
 );
 CREATE INDEX IF NOT EXISTS reservations_end_time_idx ON reservations (end_time);
 
+-- Discord bot: which post belongs to each request, and whether its 5-minute reminder has gone out.
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS discord_message_id text;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminded_at timestamptz;
+
 -- Used to rate-limit request submissions and admin login attempts per IP.
 CREATE TABLE IF NOT EXISTS rate_limits (
   key text NOT NULL,

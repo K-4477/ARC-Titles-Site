@@ -22,6 +22,20 @@ To run against the real API and database, use the Vercel CLI instead: `npm i -g 
 
 To change the admin password later, run `npm run hash-password` again, replace both variables and redeploy. Everyone is logged out.
 
+## Discord bot (optional)
+
+Each new request is posted to a channel with **Edit** and **Cancel** buttons that only members with the Guardians role can use. 5 minutes before a request starts, the bot pings the Guardians role. Edits and cancellations made on the website's admin page update the Discord post too.
+
+1. **Database.** If your tables were created before the bot existed, run `db/schema.sql` again in the Neon SQL Editor (it only adds two columns). Do this **before** deploying.
+2. **Create the bot.** At https://discord.com/developers/applications click **New Application**, name it "Spirit Portal" and set its icon. Copy the **Public Key** from General Information. Under **Bot**, click **Reset Token** and copy the token.
+3. **Invite it.** Under **OAuth2 → URL Generator**, tick the `bot` scope, then the **View Channels**, **Send Messages** and **Embed Links** permissions. Open the generated link and add the bot to your server. Make sure it can post in the bookings channel.
+4. **IDs.** In Discord, turn on **User Settings → Advanced → Developer Mode**. Right-click the bookings channel → **Copy Channel ID**. In **Server Settings → Roles**, right-click Guardians → **Copy Role ID**.
+5. **Reminders.** In the Vercel project, add **Upstash QStash** from the Marketplace and connect it. That sets the `QSTASH_*` variables.
+6. **Variables.** Add `DISCORD_BOT_TOKEN` (Secret), `DISCORD_PUBLIC_KEY`, `DISCORD_CHANNEL_ID` and `DISCORD_GUARDIAN_ROLE_ID`, then redeploy.
+7. **Buttons.** Back in the Developer Portal, under General Information, set **Interactions Endpoint URL** to `https://<your-site>/api/discord` and save. Discord checks the URL straight away, so do this after the deploy.
+
+Times in the bot's Edit form are UTC (game time). The posts themselves show each reader's local time.
+
 ## How it works
 
 | What | Where |
@@ -29,6 +43,7 @@ To change the admin password later, run `npm run hash-password` again, replace b
 | API (all actions) | `api/index.js` |
 | Login, session cookie, password hash | `server/auth.js` |
 | Database client, rate limits | `server/db.js` |
+| Discord posts, buttons, reminders | `server/discord.js`, `server/bookings.js`, `server/reminders.js`, `api/discord.js`, `api/remind.js` |
 | Tables | `db/schema.sql` |
 | Buff text, colours, max hours, booking window | `src/lib/titles.js` |
 | Front-end API calls and sample data | `src/lib/api.js` |
